@@ -1,4 +1,6 @@
 library(shiny)
+library(tidyverse)
+library(lubridate)
 #  a faire noté secabilité avec coche pour sécable sinon comprimé plein
 #  a faire utilisation des autres med par dosage décroissant
 `%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -24,7 +26,8 @@ ui <- fluidPage(
     
     mainPanel(
       h4("Résumé de la saisie"),
-      verbatimTextOutput("summary")
+      verbatimTextOutput("summary"),
+      plotOutput("calendarPlot", height = "700px")
     )
   )
 )
@@ -90,13 +93,69 @@ server <- function(input, output, session) {
     }
   })
   
+  
+data_reactive <- reactive({  
+  med <- input[[paste0("medicament", 1)]]
+  dose <- input[[paste0("dose", 1)]]
+  nb_CP <- input[[paste0("nb_CP", 1)]]
+  dose_journaliere <- dose*nb_CP
+  nb_paliers <- ceiling(dose_journaliere / input$dose_specifique)
+  # (dose*nb_CP/input$dose_specifique)*input$pas_temps
+  dates_palier <- input$date_debut + (0:(nb_paliers - 1)) * input$pas_temps
+  
+  df <- tibble(
+    date = seq(input$date_debut, by = "1 day", length.out = input$pas_temps * nb_paliers)
+  ) %>%
+    mutate(
+      palier = findInterval(date, dates_palier),
+      dose = pmax(dose_journaliere - palier * input$dose_specifique, 0),
+      jour =  format(date, "%a") |> stringr::str_to_lower(),
+      semaine = isoweek(date),
+      mois = stringr::str_to_title(format(date, "%b"))
+    )
+  # Reordonner les jours pour lecture gauche-droite lun -> dim
+  df$jour <- factor(df$jour, 
+                    levels = c("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."))
+  df$mois <- factor(df$mois, 
+                    levels = c("Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", 
+                                        "Août", "Sept.", "Oct.", "Nov.", "Déc."))
+  df
+})
+
+
+output$calendarPlot <- renderPlot({
+  
+  ggplot(data_reactive(), aes(x = jour, y = semaine, fill = dose)) +
+    geom_tile(color = "white", size = 0.4) +
+    scale_fill_gradient(low = "#fff5f0", high = "#de2d26") +
+    scale_y_continuous(breaks = seq(1, max(df$semaine), 1)) + 
+    scale_y_reverse() +
+    facet_wrap(~ mois, ncol = 1, scales = "free_y") +
+    theme_minimal(base_size = 14) +
+    labs(title = "Calendrier de décroissance posologique",
+         x = "Jour de la semaine", y = "Semaine ISO", fill = "Dose (mg)") +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      strip.text = element_text(size = 16, face = "bold"),
+      legend.position = "right"
+    )
+})
+
+  
+  
+  
+  
+  
+  
+  
   output$summary <- renderPrint({
     meds <- list()
     for (i in 1:(rv$n)) {
       med <- input[[paste0("medicament", i)]]
       dose <- input[[paste0("dose", i)]]
       nb_CP <- input[[paste0("nb_CP", i)]]
-      if (!is.null(med) && med != "" && !is.null(dose) && !is.na(dose)&&
+      if (!is.null(med) && med != "" && !is.null(dose) && !is.na(dose) &&
                 !is.null(nb_CP) && !is.na(nb_CP) && nb_CP != "") {
         meds[[i]] <- paste(med, ":", dose*nb_CP,"\ndecroissance en ", (dose*nb_CP/input$dose_specifique)*input$pas_temps," j")
       }
