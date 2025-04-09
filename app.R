@@ -4,6 +4,30 @@ library(lubridate)
 #  a faire noté secabilité avec coche pour sécable sinon comprimé plein
 #  a faire utilisation des autres med par dosage décroissant
 `%||%` <- function(a, b) if (!is.null(a)) a else b
+
+generate_calendar_plot <- function(data) {
+  req(data) 
+  ggplot(data, aes(x = jour, y = semaine, fill = dose)) +
+    geom_tile(color = "white", size = 0.4) +
+    geom_text(aes(label = dose), color = "black", size = 3) +
+    scale_fill_gradient(low = "#fff5f0", high = "#de2d26", guide = "none") +
+    scale_y_continuous(breaks = seq(1, max(data$semaine), 1)) +
+    scale_y_reverse() +
+    facet_wrap(~ mois, ncol = 1, scales = "free_y") +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = "Calendrier de décroissance posologique",
+      x = "Jour de la semaine", y = "Semaine ISO"
+    ) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      strip.text = element_text(size = 16, face = "bold"),
+      legend.position = "none"
+    )
+}
+
+
 ui <- fluidPage(
   titlePanel("Décroissance Médicamenteuse"),
   
@@ -27,7 +51,8 @@ ui <- fluidPage(
     mainPanel(
       h4("Résumé de la saisie"),
       verbatimTextOutput("summary"),
-      plotOutput("calendarPlot", height = "700px")
+      plotOutput("calendarPlot", height = "700px"),
+      downloadButton("downloadPlot", "Télécharger le plot en JPG")
     )
   )
 )
@@ -52,8 +77,8 @@ server <- function(input, output, session) {
   output$med_inputs <- renderUI({
     inputs <- lapply(1:rv$n, function(i) {
       med_val <- if (length(rv$meds) >= i) rv$meds[[i]] else "Prednisone" # real value overright for debug ""
-      dose_val <- if (length(rv$doses) >= i) rv$doses[[i]] else 50 # real value overright for debug NA
-      nbcp_val <- if (length(rv$nbcp_val) >= i) rv$nbcp_val[[i]] else 4 # real value overright for debug 1
+      dose_val <- if (length(rv$doses) >= i) rv$doses[[i]] else 25 # real value overright for debug NA
+      nbcp_val <- if (length(rv$nbcp_val) >= i) rv$nbcp_val[[i]] else 2 # real value overright for debug 1
       
       fluidRow(
         column(6, textInput(paste0("medicament", i), paste("Médicament", i),
@@ -107,27 +132,37 @@ data_reactive <- reactive({
                           "Avr.", "Mai", "Juin", "Juil.", 
                           "Août", "Sept.", "Oct.", "Nov.", "Déc."))
     )
+  # df$jour <- factor(df$jour, 
+  #                   levels = c("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."))
+  # 
+  # df$mois <- factor(df$mois, 
+  #                   levels = c("Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", 
+  #                              "Août", "Sept.", "Oct.", "Nov.", "Déc."))
   df
 })
 
 
 output$calendarPlot <- renderPlot({
-  ggplot(data_reactive(), aes(x = jour, y = semaine, fill = dose)) +
-    geom_tile(color = "white", size = 0.4) +
-    scale_fill_gradient(low = "#fff5f0", high = "#de2d26") +
-    scale_y_continuous(breaks = seq(1, max(df$semaine), 1)) + 
-    scale_y_reverse() +
-    facet_wrap(~ mois, ncol = 1, scales = "free_y") +
-    theme_minimal(base_size = 14) +
-    labs(title = "Calendrier de décroissance posologique",
-         x = "Jour de la semaine", y = "Semaine ISO", fill = "Dose (mg)") +
-    theme(
-      panel.grid = element_blank(),
-      axis.text.x = element_text(angle = 0, hjust = 0.5),
-      strip.text = element_text(size = 16, face = "bold"),
-      legend.position = "right"
-    )
+  generate_calendar_plot(data_reactive())
 })
+
+output$downloadPlot <- downloadHandler(
+  filename = function() {
+    paste("calendrier_dose_", Sys.Date(), ".jpg", sep = "")
+  },
+  content = function(file) {
+    data <- data_reactive()
+    req(data)
+    ggsave(
+      filename = file,
+      plot = generate_calendar_plot(data),
+      device = "jpeg",
+      width = 10,
+      height = 8,
+      dpi = 300
+    )
+  }
+)
 
   
   
