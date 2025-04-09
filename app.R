@@ -17,7 +17,7 @@ ui <- fluidPage(
       
       dateInput("date_debut", "Date de début :", value = Sys.Date()),
       
-      numericInput("pas_temps", "Pas de temps (en jours) :", value = 1, min = 1),
+      numericInput("pas_temps", "Pas de temps (en jours) :", value = 7, min = 1),
       # Bouton pour ajouter un médicament
       actionButton("add_medicament", "Ajouter un médicament"),
       uiOutput("med_inputs")
@@ -48,26 +48,12 @@ server <- function(input, output, session) {
     rv$n <- rv$n + 1
   })
   
-  # Ajoute un nouveau champ si le dernier est rempli
-  # observe({
-  #   req(input[[paste0("medicament", rv$n)]],
-  #       input[[paste0("dose", rv$n)]], 
-  #       input[[paste0("nb_CP", rv$n)]])
-  #   last_med <- input[[paste0("medicament", rv$n)]]
-  #   last_dose <- input[[paste0("dose", rv$n)]]
-  #   last_nb_CP <- input[[paste0("nb_CP", rv$n)]]
-  #   if (!is.null(last_med) && last_med != "" &&
-  #       !is.null(last_dose) && !is.na(last_dose) && last_dose != "" &&
-  #       !is.null(last_nb_CP) && !is.na(last_nb_CP) && last_nb_CP != "") {
-  #     rv$n <- rv$n + 1
-  #   }
-  # })
   
   output$med_inputs <- renderUI({
     inputs <- lapply(1:rv$n, function(i) {
-      med_val <- if (length(rv$meds) >= i) rv$meds[[i]] else ""
-      dose_val <- if (length(rv$doses) >= i) rv$doses[[i]] else NA
-      nbcp_val <- if (length(rv$nbcp_val) >= i) rv$nbcp_val[[i]] else 1
+      med_val <- if (length(rv$meds) >= i) rv$meds[[i]] else "Prednisone" # real value overright for debug ""
+      dose_val <- if (length(rv$doses) >= i) rv$doses[[i]] else 50 # real value overright for debug NA
+      nbcp_val <- if (length(rv$nbcp_val) >= i) rv$nbcp_val[[i]] else 4 # real value overright for debug 1
       
       fluidRow(
         column(6, textInput(paste0("medicament", i), paste("Médicament", i),
@@ -87,7 +73,9 @@ server <- function(input, output, session) {
       date_fin_default <- Sys.Date() + 30  # Date de fin = 30 jours après la date du jour
       return(dateInput("date_fin", "Date de fin :", value = date_fin_default))
     } else if (input$modalite %in% c("Milligramme", "Comprimé")) {
-      return(numericInput("dose_specifique", "Dose (en milligrammes/comprimé) :", value = 0, min = 1))
+      return(numericInput("dose_specifique", "Dose (en milligrammes/comprimé) :",
+                          value = 5,#0,
+                          min = 1))
     } else if (input$modalite == "Pourcent") {
       return(numericInput("dose_specifique_pourcent", "Dose (en pourcentage) :", value = 0, min = 0, max = 100))
     }
@@ -109,22 +97,21 @@ data_reactive <- reactive({
     mutate(
       palier = findInterval(date, dates_palier),
       dose = pmax(dose_journaliere - palier * input$dose_specifique, 0),
-      jour =  format(date, "%a") |> stringr::str_to_lower(),
+      jour =  format(date, "%a") |> 
+        stringr::str_to_lower() |> 
+        factor(levels = c("lun.", "mar.", "mer.", 
+                          "jeu.", "ven.", "sam.", "dim.")),
       semaine = isoweek(date),
-      mois = stringr::str_to_title(format(date, "%b"))
+      mois = stringr::str_to_title(format(date, "%b")) |> 
+        factor(levels = c("Janv.", "Févr.", "Mars", 
+                          "Avr.", "Mai", "Juin", "Juil.", 
+                          "Août", "Sept.", "Oct.", "Nov.", "Déc."))
     )
-  # Reordonner les jours pour lecture gauche-droite lun -> dim
-  df$jour <- factor(df$jour, 
-                    levels = c("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."))
-  df$mois <- factor(df$mois, 
-                    levels = c("Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", 
-                                        "Août", "Sept.", "Oct.", "Nov.", "Déc."))
   df
 })
 
 
 output$calendarPlot <- renderPlot({
-  
   ggplot(data_reactive(), aes(x = jour, y = semaine, fill = dose)) +
     geom_tile(color = "white", size = 0.4) +
     scale_fill_gradient(low = "#fff5f0", high = "#de2d26") +
